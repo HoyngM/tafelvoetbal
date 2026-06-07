@@ -14,9 +14,13 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body className="bg-gray-50 min-h-screen">
+      {/* Prevent flash of wrong theme on load */}
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: `try{if(localStorage.getItem('theme')==='dark')document.documentElement.classList.add('dark')}catch(e){}` }} />
+      </head>
+      <body className="min-h-screen">
         <Nav />
-        <main className="max-w-4xl mx-auto px-4 py-8">{children}</main>
+        <main className="max-w-5xl mx-auto px-4 py-8">{children}</main>
       </body>
     </html>
   );

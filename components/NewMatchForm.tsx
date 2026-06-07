@@ -1,7 +1,8 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
+import s from './NewMatchForm.module.css';
 
 type Player = { id: number; name: string };
 
@@ -11,171 +12,321 @@ type TeamSlot = {
   keeper_goals: number;
 };
 
-const emptySlot = (): TeamSlot => ({ player_id: null, position: 'forward', keeper_goals: 0 });
+const WIN_SCORE = 10;
 
-function usedIds(team: TeamSlot[]) {
-  return team.map((s) => s.player_id).filter(Boolean) as number[];
-}
+const ROD_LAYOUT = [
+  { side: 'top' as const, count: 1, y: 0.045 },
+  { side: 'top' as const, count: 2, y: 0.155 },
+  { side: 'bottom' as const, count: 3, y: 0.30 },
+  { side: 'top' as const, count: 5, y: 0.43 },
+  { side: 'bottom' as const, count: 5, y: 0.57 },
+  { side: 'top' as const, count: 3, y: 0.70 },
+  { side: 'bottom' as const, count: 2, y: 0.845 },
+  { side: 'bottom' as const, count: 1, y: 0.955 },
+];
 
-function updateSlot(
-  team: TeamSlot[],
-  setTeam: (t: TeamSlot[]) => void,
-  idx: number,
-  patch: Partial<TeamSlot>,
-) {
-  setTeam(team.map((s, i) => (i === idx ? { ...s, ...patch } : s)));
-}
+const keeperSlot = (): TeamSlot => ({ player_id: null, position: 'goalkeeper', keeper_goals: 0 });
+const forwardSlot = (): TeamSlot => ({ player_id: null, position: 'forward', keeper_goals: 0 });
 
-function TeamSection({
-  label,
-  players,
-  team,
-  setTeam,
-  otherTeam,
-}: {
-  label: string;
-  players: Player[];
-  team: TeamSlot[];
-  setTeam: (t: TeamSlot[]) => void;
-  otherTeam: TeamSlot[];
-}) {
-  const takenIds = [...usedIds(team), ...usedIds(otherTeam)];
+// ---- Field & table components ----
 
+function FieldLines() {
   return (
-    <div className="bg-white rounded-xl border border-gray-200 p-4 flex flex-col gap-3">
-      <div className="flex items-center justify-between">
-        <h3 className="font-semibold text-gray-700">{label}</h3>
-        {team.length === 1 ? (
-          <button
-            type="button"
-            onClick={() => setTeam([...team, emptySlot()])}
-            className="text-xs text-green-600 hover:underline"
-          >
-            + Add 2nd player
-          </button>
-        ) : (
-          <button
-            type="button"
-            onClick={() => setTeam([team[0]])}
-            className="text-xs text-red-400 hover:underline"
-          >
-            − Remove 2nd player
-          </button>
-        )}
-      </div>
+    <svg className={s.lines} viewBox="0 0 100 167" preserveAspectRatio="none">
+      <rect x="1" y="1" width="98" height="165" fill="none" stroke="var(--felt-line)" strokeWidth="0.5" opacity="0.8" />
+      <line x1="1" y1="83.5" x2="99" y2="83.5" stroke="var(--felt-line)" strokeWidth="0.5" opacity="0.7" />
+      <circle cx="50" cy="83.5" r="11" fill="none" stroke="var(--felt-line)" strokeWidth="0.5" opacity="0.7" />
+      <circle cx="50" cy="83.5" r="0.8" fill="var(--felt-line)" opacity="0.9" />
+      <rect x="22" y="1" width="56" height="18" fill="none" stroke="var(--felt-line)" strokeWidth="0.5" opacity="0.7" />
+      <rect x="35" y="1" width="30" height="8" fill="none" stroke="var(--felt-line)" strokeWidth="0.5" opacity="0.7" />
+      <rect x="22" y="148" width="56" height="18" fill="none" stroke="var(--felt-line)" strokeWidth="0.5" opacity="0.7" />
+      <rect x="35" y="158" width="30" height="8" fill="none" stroke="var(--felt-line)" strokeWidth="0.5" opacity="0.7" />
+      <rect x="40" y="-0.5" width="20" height="2" fill="rgba(0,0,0,0.45)" stroke="var(--felt-line)" strokeWidth="0.4" />
+      <rect x="40" y="165.5" width="20" height="2" fill="rgba(0,0,0,0.45)" stroke="var(--felt-line)" strokeWidth="0.4" />
+    </svg>
+  );
+}
 
-      {team.map((slot, idx) => (
-        <div key={idx} className="flex flex-col gap-2 border-t border-gray-100 pt-3 first:border-0 first:pt-0">
-          <label className="text-xs font-medium text-gray-500">
-            Player {team.length > 1 ? idx + 1 : ''}
-          </label>
-          <select
-            className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
-            value={slot.player_id ?? ''}
-            onChange={(e) =>
-              updateSlot(team, setTeam, idx, { player_id: Number(e.target.value) || null })
-            }
-          >
-            <option value="">Select player…</option>
-            {players.map((p) => (
-              <option
-                key={p.id}
-                value={p.id}
-                disabled={takenIds.includes(p.id) && p.id !== slot.player_id}
-              >
-                {p.name}
-              </option>
-            ))}
-          </select>
-
-          <div className="flex gap-2">
-            {(['forward', 'goalkeeper'] as const).map((pos) => (
-              <button
-                key={pos}
-                type="button"
-                onClick={() => updateSlot(team, setTeam, idx, { position: pos })}
-                className={`flex-1 text-xs py-1.5 rounded-lg border transition-colors ${
-                  slot.position === pos
-                    ? 'bg-green-600 border-green-600 text-white font-semibold'
-                    : 'border-gray-200 text-gray-500 hover:border-green-400'
-                }`}
-              >
-                {pos === 'forward' ? '⚡ Forward' : '🧤 Goalkeeper'}
-              </button>
-            ))}
-          </div>
-
-          {slot.position === 'goalkeeper' && (
-            <div className="flex items-center gap-2">
-              <label className="text-xs text-gray-500">Keeper goals scored:</label>
-              <input
-                type="number"
-                min={0}
-                max={10}
-                value={slot.keeper_goals}
-                onChange={(e) =>
-                  updateSlot(team, setTeam, idx, {
-                    keeper_goals: Math.max(0, Number(e.target.value)),
-                  })
-                }
-                className="w-16 border border-gray-200 rounded px-2 py-1 text-sm text-center focus:outline-none focus:ring-2 focus:ring-green-500"
-              />
-              <span className="text-xs text-blue-500">⭐ ×2 pts</span>
-            </div>
-          )}
-        </div>
-      ))}
+function Figure({ team }: { team: 'red' | 'blue' }) {
+  return (
+    <div className={`${s.fig} ${team === 'red' ? s.figRed : s.figBlue}`}>
+      <div className={s.figShoulders} />
+      <div className={s.figHead} />
     </div>
   );
 }
 
-export default function NewMatchForm() {
-  const [players, setPlayers] = useState<Player[]>([]);
-  const [team1, setTeam1] = useState<TeamSlot[]>([emptySlot()]);
-  const [team2, setTeam2] = useState<TeamSlot[]>([emptySlot()]);
-  const [score1, setScore1] = useState(0);
-  const [score2, setScore2] = useState(0);
-  const [notes, setNotes] = useState('');
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState('');
-  const router = useRouter();
+function Rod({ rod, teamAtTop }: { rod: typeof ROD_LAYOUT[0]; teamAtTop: 'red' | 'blue' }) {
+  const team: 'red' | 'blue' = rod.side === 'top' ? teamAtTop : (teamAtTop === 'red' ? 'blue' : 'red');
+  return (
+    <>
+      <div className={s.rod} style={{ top: `${rod.y * 100}%` }}>
+        <div className={s.bar} />
+        <div className={`${s.handle} ${s.handleLeft}`} />
+        <div className={`${s.handle} ${s.handleRight}`} />
+      </div>
+      <div className={s.rowFigs} style={{ top: `${rod.y * 100}%` }}>
+        {Array.from({ length: rod.count }, (_, i) => <Figure key={i} team={team} />)}
+      </div>
+    </>
+  );
+}
 
-  useEffect(() => {
-    let mounted = true;
-    fetch('/api/players')
-      .then((r) => r.json())
-      .then((data) => { if (mounted) setPlayers(data); });
-    return () => { mounted = false; };
-  }, []);
+function FoosballTable({ teamAtTop }: { teamAtTop: 'red' | 'blue' }) {
+  return (
+    <div className={s.table}>
+      <span className={s.screw} style={{ top: 8, left: 8 }} />
+      <span className={s.screw} style={{ top: 8, right: 8 }} />
+      <span className={s.screw} style={{ bottom: 8, left: 8 }} />
+      <span className={s.screw} style={{ bottom: 8, right: 8 }} />
+      <div className={s.field}>
+        <FieldLines />
+        {ROD_LAYOUT.map((rod, i) => <Rod key={i} rod={rod} teamAtTop={teamAtTop} />)}
+        <div className={s.ball} />
+      </div>
+    </div>
+  );
+}
 
-  function validate(): string | null {
-    const allSlots = [...team1, ...team2];
-    if (allSlots.some((s) => s.player_id === null)) return 'Please select all players.';
-    const ids = allSlots.map((s) => s.player_id);
-    if (new Set(ids).size !== ids.length) return 'A player can only be in one slot.';
-    if (score1 < 0 || score2 < 0) return 'Scores must be non-negative.';
-    return null;
+// ---- Scoreboard ----
+
+function Scoreboard({
+  team, label, slots, players, score, onAdd, onSub, isWinner, popKey,
+}: {
+  team: 'red' | 'blue';
+  label: string;
+  slots: TeamSlot[];
+  players: Player[];
+  score: number;
+  onAdd: () => void;
+  onSub: () => void;
+  isWinner: boolean;
+  popKey: number;
+}) {
+  const names = slots.map((sl) => players.find((p) => p.id === sl.player_id)?.name ?? '—');
+  return (
+    <div className={[s.scoreboard, team === 'red' ? s.scoreboardRed : s.scoreboardBlue, isWinner ? s.scoreboardWinner : ''].join(' ')}>
+      <div className={s.teamInfo}>
+        <div className={`${s.teamMark} ${team === 'red' ? s.teamMarkRed : s.teamMarkBlue}`}>
+          {label[0]}
+        </div>
+        <div className={s.teamMeta}>
+          <div className={s.teamName}>
+            Team {label}
+            {isWinner && <span className={s.winnerPill}>★ Winnaar</span>}
+          </div>
+          <div className={s.teamPlayers}>
+            {names.map((n, i) => <span key={i}>{i > 0 && ' & '}<b>{n}</b></span>)}
+          </div>
+        </div>
+      </div>
+      <div className={s.scoreCluster}>
+        <button className={s.scoreBtn} onClick={onSub} disabled={score <= 0} aria-label="−">−</button>
+        <div
+          key={popKey}
+          className={[s.scoreNum, team === 'red' ? s.scoreNumRed : s.scoreNumBlue, s.scoreNumPop].join(' ')}
+          onClick={score < WIN_SCORE ? onAdd : undefined}
+          role="button"
+          tabIndex={0}
+          onKeyDown={(e) => { if ((e.key === 'Enter' || e.key === ' ') && score < WIN_SCORE) { e.preventDefault(); onAdd(); } }}
+        >
+          {score}<span className={s.scoreDivider}>/{WIN_SCORE}</span>
+        </div>
+        <button className={s.scoreBtn} onClick={onAdd} disabled={score >= WIN_SCORE} aria-label="+">+</button>
+      </div>
+    </div>
+  );
+}
+
+// ---- Player slot ----
+
+function PlayerSlot({
+  idx, team, players, slot, takenIds, onChange, onRemove,
+}: {
+  idx: number;
+  team: 'red' | 'blue';
+  players: Player[];
+  slot: TeamSlot;
+  takenIds: number[];
+  onChange: (patch: Partial<TeamSlot>) => void;
+  onRemove?: () => void;
+}) {
+  const label = idx === 0 ? 'Keeper' : 'Aanvaller';
+  return (
+    <div className={s.slot}>
+      <div className={s.slotLabelRow}>
+        <span className={s.slotLabel}>{label}</span>
+        {onRemove && (
+          <button className={s.slotRemove} onClick={onRemove} title="Verwijder speler" type="button">×</button>
+        )}
+      </div>
+      <div className={s.selectWrap}>
+        <select
+          className={`${s.playerSelect} ${team === 'red' ? s.playerSelectRed : s.playerSelectBlue}`}
+          value={slot.player_id ?? ''}
+          onChange={(e) => onChange({ player_id: Number(e.target.value) || null })}
+        >
+          <option value="">— Kies speler —</option>
+          {players.map((p) => (
+            <option key={p.id} value={p.id} disabled={takenIds.includes(p.id) && p.id !== slot.player_id}>
+              {p.name}
+            </option>
+          ))}
+        </select>
+      </div>
+      {/* Keeper goals always visible on slot 0 */}
+      {idx === 0 && (
+        <div className={s.keeperGoalsRow}>
+          <span className={s.keeperGoalsLabel}>Keepergoals:</span>
+          <input
+            type="number"
+            min={0}
+            max={WIN_SCORE}
+            value={slot.keeper_goals}
+            onChange={(e) => onChange({ keeper_goals: Math.max(0, Number(e.target.value)) })}
+            className={s.keeperGoalsInput}
+          />
+          <span className={s.keeperBadge}>×2</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---- Side panel ----
+
+function SidePanel({
+  team, label, players, slots, setSlots, otherSlots,
+}: {
+  team: 'red' | 'blue';
+  label: string;
+  players: Player[];
+  slots: TeamSlot[];
+  setSlots: (s: TeamSlot[]) => void;
+  otherSlots: TeamSlot[];
+}) {
+  const takenIds = [
+    ...slots.map((sl) => sl.player_id),
+    ...otherSlots.map((sl) => sl.player_id),
+  ].filter(Boolean) as number[];
+
+  function updateSlot(idx: number, patch: Partial<TeamSlot>) {
+    setSlots(slots.map((sl, i) => (i === idx ? { ...sl, ...patch } : sl)));
   }
 
-  async function submit(e: React.FormEvent) {
-    e.preventDefault();
-    const err = validate();
-    if (err) { setError(err); return; }
+  return (
+    <aside className={s.side}>
+      <div className={s.sideHead}>
+        <span className={`${s.swatch} ${team === 'red' ? s.swatchRed : s.swatchBlue}`} />
+        Team {label}
+      </div>
+
+      {slots.map((slot, idx) => (
+        <PlayerSlot
+          key={idx}
+          idx={idx}
+          team={team}
+          players={players}
+          slot={slot}
+          takenIds={takenIds}
+          onChange={(patch) => updateSlot(idx, patch)}
+          onRemove={idx === 1 ? () => setSlots(slots.slice(0, 1)) : undefined}
+        />
+      ))}
+
+      {slots.length === 1 && (
+        <button
+          type="button"
+          className={s.addSlotBtn}
+          onClick={() => setSlots([slots[0], forwardSlot()])}
+        >
+          + Aanvaller toevoegen
+        </button>
+      )}
+    </aside>
+  );
+}
+
+// ---- Main component ----
+
+export default function NewMatchForm() {
+  const router = useRouter();
+  const [players, setPlayers] = useState<Player[]>([]);
+  const [teamAtTop, setTeamAtTop] = useState<'red' | 'blue'>('red');
+  // Both teams default to WIN_SCORE so user only needs to adjust the loser's score
+  const [scores, setScores] = useState({ red: WIN_SCORE, blue: WIN_SCORE });
+  const [popKey, setPopKey] = useState({ red: 0, blue: 0 });
+  const [redSlots, setRedSlots] = useState<TeamSlot[]>([keeperSlot(), forwardSlot()]);
+  const [blueSlots, setBlueSlots] = useState<TeamSlot[]>([keeperSlot(), forwardSlot()]);
+  const [notes, setNotes] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState('');
+
+  useEffect(() => {
+    fetch('/api/players').then((r) => r.json()).then(setPlayers);
+  }, []);
+
+  const winner = useMemo<'red' | 'blue' | null>(() => {
+    if (scores.red >= WIN_SCORE && scores.red > scores.blue) return 'red';
+    if (scores.blue >= WIN_SCORE && scores.blue > scores.red) return 'blue';
+    return null;
+  }, [scores]);
+
+  // addScore does NOT block on winner — both teams can always score
+  const addScore = useCallback((team: 'red' | 'blue') => {
+    setScores((prev) => ({ ...prev, [team]: Math.min(WIN_SCORE, prev[team] + 1) }));
+    setPopKey((prev) => ({ ...prev, [team]: prev[team] + 1 }));
+  }, []);
+
+  const subScore = useCallback((team: 'red' | 'blue') => {
+    setScores((prev) => ({ ...prev, [team]: Math.max(0, prev[team] - 1) }));
+  }, []);
+
+  const reset = useCallback(() => {
+    setScores({ red: WIN_SCORE, blue: WIN_SCORE });
+    setSaveError('');
+  }, []);
+
+  const swapSides = useCallback(() => {
+    setTeamAtTop((t) => (t === 'red' ? 'blue' : 'red'));
+  }, []);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const tag = (e.target as HTMLElement).tagName;
+      if (tag === 'INPUT' || tag === 'SELECT') return;
+      if (e.key === 'q' || e.key === 'Q') addScore('red');
+      if (e.key === 'a' || e.key === 'A') subScore('red');
+      if (e.key === 'p' || e.key === 'P') addScore('blue');
+      if (e.key === 'l' || e.key === 'L') subScore('blue');
+      if (e.key === 's' || e.key === 'S') swapSides();
+      if (e.key === 'r' || e.key === 'R') reset();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [addScore, subScore, swapSides, reset]);
+
+  async function saveMatch() {
+    const allSlots = [...redSlots, ...blueSlots];
+    if (allSlots.some((sl) => sl.player_id === null)) {
+      setSaveError('Selecteer alle spelers.');
+      return;
+    }
     setSaving(true);
-    setError('');
+    setSaveError('');
 
     const participants = [
-      ...team1.map((s) => ({
-        player_id: s.player_id!,
+      ...redSlots.map((sl, idx) => ({
+        player_id: sl.player_id!,
         team: 1,
-        position: s.position,
-        keeper_goals: s.position === 'goalkeeper' ? s.keeper_goals : 0,
+        position: sl.position,
+        keeper_goals: idx === 0 ? sl.keeper_goals : 0,
       })),
-      ...team2.map((s) => ({
-        player_id: s.player_id!,
+      ...blueSlots.map((sl, idx) => ({
+        player_id: sl.player_id!,
         team: 2,
-        position: s.position,
-        keeper_goals: s.position === 'goalkeeper' ? s.keeper_goals : 0,
+        position: sl.position,
+        keeper_goals: idx === 0 ? sl.keeper_goals : 0,
       })),
     ];
 
@@ -183,9 +334,9 @@ export default function NewMatchForm() {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        team1_score: score1,
-        team2_score: score2,
-        notes: notes || null,
+        team1_score: scores.red,
+        team2_score: scores.blue,
+        notes: notes.trim() || null,
         participants,
       }),
     });
@@ -194,72 +345,130 @@ export default function NewMatchForm() {
     if (res.ok) {
       router.push('/');
     } else {
-      setError('Failed to save match.');
+      setSaveError('Wedstrijd opslaan mislukt. Probeer opnieuw.');
     }
   }
 
+  const topTeam = teamAtTop;
+  const bottomTeam: 'red' | 'blue' = teamAtTop === 'red' ? 'blue' : 'red';
+  const teamLabel = (t: 'red' | 'blue') => (t === 'red' ? 'Rood' : 'Blauw');
+  const isCrawl =
+    (scores.red === WIN_SCORE && scores.blue === 0) ||
+    (scores.blue === WIN_SCORE && scores.red === 0);
+
   return (
-    <form onSubmit={submit} className="flex flex-col gap-6 max-w-2xl">
-      <div className="grid grid-cols-2 gap-4">
-        <TeamSection label="Team 1" players={players} team={team1} setTeam={setTeam1} otherTeam={team2} />
-        <TeamSection label="Team 2" players={players} team={team2} setTeam={setTeam2} otherTeam={team1} />
+    <div>
+      {/* Top bar */}
+      <div className={s.topbar}>
+        <div className={s.brand}>
+          <span className={s.brandDot} />
+          <span className={s.brandTitle}>Wedstrijd bijhouden</span>
+          <span className={s.brandSub}>eerste tot {WIN_SCORE} wint</span>
+        </div>
+        <div className={s.controls}>
+          <button className={`${s.btn} ${s.btnGhost}`} onClick={swapSides} title="Wissel kanten (S)">
+            <svg className={s.btnIcon} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M7 4l-4 4 4 4" /><path d="M3 8h14" />
+              <path d="M17 20l4-4-4-4" /><path d="M21 16H7" />
+            </svg>
+            Wissel
+          </button>
+          <button className={s.btn} onClick={reset} title="Reset wedstrijd (R)">
+            <svg className={s.btnIcon} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M3 12a9 9 0 1 0 3-6.7" /><path d="M3 4v5h5" />
+            </svg>
+            Reset
+          </button>
+        </div>
       </div>
 
-      <div className="bg-white rounded-xl border border-gray-200 p-4">
-        <h3 className="font-semibold text-gray-700 mb-3">Score</h3>
-        <div className="flex items-center justify-center gap-6">
-          <div className="flex flex-col items-center gap-1">
-            <span className="text-xs text-gray-500 font-medium">Team 1</span>
-            <input
-              type="number"
-              min={0}
-              max={10}
-              value={score1}
-              onChange={(e) => setScore1(Math.max(0, Number(e.target.value)))}
-              className="w-20 text-center text-3xl font-bold border border-gray-200 rounded-xl py-2 focus:outline-none focus:ring-2 focus:ring-green-500"
-            />
+      {/* Stage */}
+      <div className={s.stage}>
+        <SidePanel
+          team="red"
+          label={teamLabel('red')}
+          players={players}
+          slots={redSlots}
+          setSlots={setRedSlots}
+          otherSlots={blueSlots}
+        />
+
+        <div className={s.center}>
+          <Scoreboard
+            team={topTeam}
+            label={teamLabel(topTeam)}
+            slots={topTeam === 'red' ? redSlots : blueSlots}
+            players={players}
+            score={scores[topTeam]}
+            onAdd={() => addScore(topTeam)}
+            onSub={() => subScore(topTeam)}
+            isWinner={winner === topTeam}
+            popKey={popKey[topTeam]}
+          />
+          <div className={s.tableWrap}>
+            <FoosballTable teamAtTop={teamAtTop} />
           </div>
-          <span className="text-2xl text-gray-300 font-bold mt-5">–</span>
-          <div className="flex flex-col items-center gap-1">
-            <span className="text-xs text-gray-500 font-medium">Team 2</span>
-            <input
-              type="number"
-              min={0}
-              max={10}
-              value={score2}
-              onChange={(e) => setScore2(Math.max(0, Number(e.target.value)))}
-              className="w-20 text-center text-3xl font-bold border border-gray-200 rounded-xl py-2 focus:outline-none focus:ring-2 focus:ring-green-500"
-            />
-          </div>
+          <Scoreboard
+            team={bottomTeam}
+            label={teamLabel(bottomTeam)}
+            slots={bottomTeam === 'red' ? redSlots : blueSlots}
+            players={players}
+            score={scores[bottomTeam]}
+            onAdd={() => addScore(bottomTeam)}
+            onSub={() => subScore(bottomTeam)}
+            isWinner={winner === bottomTeam}
+            popKey={popKey[bottomTeam]}
+          />
         </div>
 
-        {((score1 === 10 && score2 === 0) || (score1 === 0 && score2 === 10)) && (
-          <p className="text-center text-orange-500 text-sm font-semibold mt-3">
-            🐛 Someone&apos;s crawling under the table!
-          </p>
-        )}
-      </div>
-
-      <div className="bg-white rounded-xl border border-gray-200 p-4">
-        <label className="text-sm font-medium text-gray-700 block mb-2">Notes (optional)</label>
-        <input
-          type="text"
-          value={notes}
-          onChange={(e) => setNotes(e.target.value)}
-          placeholder="e.g. Final of the day"
-          className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
+        <SidePanel
+          team="blue"
+          label={teamLabel('blue')}
+          players={players}
+          slots={blueSlots}
+          setSlots={setBlueSlots}
+          otherSlots={redSlots}
         />
       </div>
 
-      {error && <p className="text-red-500 text-sm">{error}</p>}
+      {/* Keyboard hints */}
+      {!winner && (
+        <div className={s.footer}>
+          <div className={s.hint}>
+            <span><span className={s.key}>Q</span>/<span className={s.key}>A</span> Rood ±</span>
+            <span><span className={s.key}>P</span>/<span className={s.key}>L</span> Blauw ±</span>
+            <span><span className={s.key}>S</span> Wissel</span>
+            <span><span className={s.key}>R</span> Reset</span>
+          </div>
+          <span>Klik op de score voor een doelpunt</span>
+        </div>
+      )}
 
-      <button
-        type="submit"
-        disabled={saving}
-        className="bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white font-bold py-3 rounded-xl transition-colors"
-      >
-        {saving ? 'Saving…' : 'Save Match'}
-      </button>
-    </form>
+      {/* Save section — shown when winner is decided */}
+      {winner && (
+        <div className={s.saveSection}>
+          <div className={s.saveSectionTitle}>
+            ★ Team {teamLabel(winner)} wint!
+            {isCrawl && <span style={{ color: '#f97316', marginLeft: 8 }}>🐛 Iemand kruipt!</span>}
+          </div>
+          <input
+            type="text"
+            value={notes}
+            onChange={(e) => setNotes(e.target.value)}
+            placeholder="Notities (optioneel) — bijv. Finale van de dag"
+            className={s.notesInput}
+          />
+          <div className={s.saveRow}>
+            <button className={`${s.btn} ${s.btnPrimary}`} onClick={saveMatch} disabled={saving}>
+              {saving ? 'Opslaan…' : 'Wedstrijd opslaan'}
+            </button>
+            <button className={`${s.btn} ${s.btnGhost}`} onClick={reset}>
+              Reset &amp; opnieuw
+            </button>
+            {saveError && <span className={s.saveError}>{saveError}</span>}
+          </div>
+        </div>
+      )}
+    </div>
   );
 }

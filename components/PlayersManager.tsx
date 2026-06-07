@@ -35,12 +35,12 @@ export default function PlayersManager() {
       setNewName('');
     } else {
       const data = await res.json();
-      setError(data.error ?? 'Failed to add player.');
+      setError(data.error ?? 'Speler toevoegen mislukt.');
     }
   }
 
   async function deletePlayer(id: number, name: string) {
-    if (!confirm(`Remove ${name}? This will not delete their match history.`)) return;
+    if (!confirm(`${name} verwijderen? Dit verwijdert hun wedstrijdgeschiedenis niet.`)) return;
     await fetch('/api/players', {
       method: 'DELETE',
       headers: { 'Content-Type': 'application/json' },
@@ -49,44 +49,79 @@ export default function PlayersManager() {
     setPlayers((prev) => prev.filter((p) => p.id !== id));
   }
 
+  const inputStyle: React.CSSProperties = {
+    flex: 1,
+    background: 'var(--panel-2)',
+    border: '1px solid var(--line)',
+    borderRadius: 10,
+    padding: '10px 14px',
+    color: 'var(--text)',
+    fontSize: 13,
+    fontFamily: 'inherit',
+  };
+
+  const panelStyle: React.CSSProperties = {
+    background: 'var(--panel)',
+    border: '1px solid var(--line)',
+    borderRadius: 14,
+  };
+
   return (
-    <div className="max-w-md flex flex-col gap-6">
-      <form onSubmit={addPlayer} className="bg-white rounded-xl border border-gray-200 p-4 flex gap-2">
+    <div style={{ maxWidth: 480, display: 'flex', flexDirection: 'column', gap: 16 }}>
+      <form onSubmit={addPlayer} style={{ ...panelStyle, padding: '14px', display: 'flex', gap: 8 }}>
         <input
           type="text"
           value={newName}
           onChange={(e) => { setNewName(e.target.value); setError(''); }}
-          placeholder="Player name…"
-          className="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
+          placeholder="Spelernaam…"
+          style={inputStyle}
           maxLength={100}
         />
         <button
           type="submit"
           disabled={adding || !newName.trim()}
-          className="bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white text-sm font-semibold px-4 py-2 rounded-lg transition-colors"
+          style={{
+            background: adding || !newName.trim() ? 'var(--panel-2)' : 'var(--blue)',
+            border: '1px solid var(--line)',
+            color: adding || !newName.trim() ? 'var(--muted)' : '#fff',
+            borderRadius: 10,
+            padding: '10px 18px',
+            fontSize: 13,
+            fontWeight: 600,
+            cursor: adding || !newName.trim() ? 'not-allowed' : 'pointer',
+            transition: 'background 120ms',
+          }}
         >
-          {adding ? '…' : 'Add'}
+          {adding ? '…' : 'Toevoegen'}
         </button>
       </form>
 
-      {error && <p className="text-red-500 text-sm px-1">{error}</p>}
+      {error && <p style={{ color: '#ff6259', fontSize: 13, paddingLeft: 4 }}>{error}</p>}
 
-      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+      <div style={panelStyle}>
         {players.length === 0 && (
-          <p className="text-gray-400 text-center py-8 text-sm">No players yet. Add some!</p>
+          <p style={{ textAlign: 'center', color: 'var(--muted)', padding: '32px 0', fontSize: 13 }}>
+            Nog geen spelers. Voeg er wat toe!
+          </p>
         )}
         {players.map((p, i) => (
           <div
             key={p.id}
-            className={`flex items-center justify-between px-4 py-3 ${
-              i < players.length - 1 ? 'border-b border-gray-100' : ''
-            }`}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              padding: '12px 16px',
+              borderBottom: i < players.length - 1 ? '1px solid var(--line)' : 'none',
+            }}
           >
-            <span className="text-sm font-medium text-gray-800">{p.name}</span>
+            <span style={{ fontSize: 14, fontWeight: 500, color: 'var(--text)' }}>{p.name}</span>
             <button
               onClick={() => deletePlayer(p.id, p.name)}
-              className="text-gray-300 hover:text-red-400 transition-colors text-lg"
-              title="Remove player"
+              style={{ background: 'none', border: 'none', color: 'var(--line)', cursor: 'pointer', fontSize: 20 }}
+              onMouseOver={(e) => (e.currentTarget.style.color = 'var(--red)')}
+              onMouseOut={(e) => (e.currentTarget.style.color = 'var(--line)')}
+              title="Verwijder speler"
             >
               ×
             </button>
